@@ -13,6 +13,8 @@ A comprehensive, real-time multiplayer Teen Patti game with stunning casino-them
 
 ### 💰 Wallet & Payment System
 - **Chips/Tokens System**: Convert balance to chips for gameplay
+- **User-to-User Transfers**: Send/receive chips between players instantly
+- **Automatic Wallet Updates**: Real-time balance updates on transfers
 - **Wallet Top-up**: Add funds to your account (simulation included)
 - **Withdrawal System**: Request withdrawals with admin approval
 - **Transaction History**: Complete record of all financial activities
@@ -21,13 +23,17 @@ A comprehensive, real-time multiplayer Teen Patti game with stunning casino-them
 ### 👑 Admin Features
 - **User Management**: Block, unblock, or delete user accounts
 - **Balance Control**: Add or deduct chips/balance from any user
+- **Token Generation**: Generate millions of chips/tokens instantly
+- **Admin Transfers**: Send/receive tokens directly in the app
 - **Game Monitoring**: View live games and statistics
 - **Revenue Analytics**: Track commission earnings and platform metrics
 - **Transaction Oversight**: Monitor all platform transactions
 
 ### 🎨 UI/UX Features
 - **Casino Theme**: Stunning gold and red color scheme
-- **AI Girl Images**: Beautiful AI-generated character avatars
+- **Random AI Girl Images**: Beautiful AI-generated avatars throughout the app
+- **Dynamic Avatar Generation**: Unique AI avatars for each user and feature
+- **Casino Dealer Girls**: AI-powered dealers for immersive experience
 - **Responsive Design**: Works perfectly on desktop and mobile
 - **Real-time Notifications**: Toast notifications for all game events
 - **Smooth Animations**: Engaging transitions and effects
@@ -204,6 +210,9 @@ teenpatti-multiplayer/
 ### Wallet Operations
 - `GET /api/wallet/balance` - Get wallet balance
 - `POST /api/wallet/buy-chips` - Convert balance to chips
+- `POST /api/wallet/transfer` - Transfer chips to other users
+- `POST /api/wallet/request-chips` - Request chips from other users
+- `GET /api/wallet/transfers` - Transfer history
 - `POST /api/wallet/topup` - Add funds to wallet
 - `POST /api/wallet/withdraw` - Request withdrawal
 - `GET /api/wallet/transactions` - Transaction history
@@ -213,6 +222,10 @@ teenpatti-multiplayer/
 - `GET /api/admin/users` - Get all users
 - `PATCH /api/admin/users/:id/status` - Update user status
 - `POST /api/admin/users/:id/balance` - Adjust user balance
+- `POST /api/admin/generate-tokens` - Generate millions of tokens
+- `POST /api/admin/send-tokens` - Send tokens to users
+- `POST /api/admin/receive-tokens` - Receive tokens from users
+- `GET /api/admin/token-stats` - Token management statistics
 
 ## 🔌 WebSocket Events
 

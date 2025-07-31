@@ -8,7 +8,12 @@ const transactionSchema = new mongoose.Schema({
   },
   type: {
     type: String,
-    enum: ['deposit', 'withdrawal', 'game_win', 'game_loss', 'commission', 'chip_purchase', 'bonus', 'referral', 'admin_adjustment'],
+    enum: [
+      'deposit', 'withdrawal', 'game_win', 'game_loss', 'commission', 
+      'chip_purchase', 'bonus', 'referral', 'admin_adjustment',
+      'chip_transfer_in', 'chip_transfer_out', 'chip_request',
+      'admin_token_generation', 'admin_token_send', 'admin_token_receive', 'admin_token_deduction'
+    ],
     required: true
   },
   amount: {

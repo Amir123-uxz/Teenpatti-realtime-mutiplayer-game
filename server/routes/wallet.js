@@ -385,29 +385,37 @@ router.get('/stats', auth, async (req, res) => {
   }
 });
 
-// Transfer chips to another user (optional feature)
+// Transfer chips to another user (Enhanced version)
 router.post('/transfer', auth, async (req, res) => {
   try {
-    const { recipientUsername, amount, message } = req.body;
+    const { recipientUsername, recipientEmail, amount, message } = req.body;
     
-    if (!recipientUsername || !amount || amount <= 0) {
+    if ((!recipientUsername && !recipientEmail) || !amount || amount <= 0) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid transfer details'
+        message: 'Recipient identifier (username or email) and valid amount are required'
       });
     }
 
     // Minimum transfer amount
-    if (amount < 10) {
+    if (amount < 1) {
       return res.status(400).json({
         success: false,
-        message: 'Minimum transfer amount is 10 chips'
+        message: 'Minimum transfer amount is 1 chip'
       });
+    }
+
+    // Find recipient by username or email
+    let recipientQuery = { status: 'active' };
+    if (recipientUsername) {
+      recipientQuery.username = recipientUsername;
+    } else {
+      recipientQuery.email = recipientEmail;
     }
 
     const [sender, recipient] = await Promise.all([
       User.findById(req.userId),
-      User.findOne({ username: recipientUsername, status: 'active' })
+      User.findOne(recipientQuery)
     ]);
 
     if (!sender) {
@@ -439,25 +447,45 @@ router.post('/transfer', auth, async (req, res) => {
       });
     }
 
-    // Perform transfer
-    await Promise.all([
-      sender.deductChips(amount),
-      recipient.addChips(amount)
-    ]);
+    // Record balances before transfer
+    const senderBalanceBefore = {
+      chips: sender.wallet.chips,
+      balance: sender.wallet.balance
+    };
+    const recipientBalanceBefore = {
+      chips: recipient.wallet.chips,
+      balance: recipient.wallet.balance
+    };
+
+    // Perform transfer with automatic wallet updates
+    sender.wallet.chips -= amount;
+    recipient.wallet.chips += amount;
+
+    await Promise.all([sender.save(), recipient.save()]);
 
     // Create transaction records
-    const transferId = `transfer_${Date.now()}`;
+    const transferId = `user_transfer_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     
     const senderTransaction = new Transaction({
       user: sender._id,
       type: 'chip_transfer_out',
       amount,
       currency: 'chips',
-      description: `Transferred ${amount} chips to ${recipientUsername}`,
-      reference: { transferId },
+      description: `Transferred ${amount} chips to ${recipient.username}`,
+      reference: { transferId, recipientId: recipient._id },
+      balanceBefore: senderBalanceBefore,
+      balanceAfter: {
+        chips: sender.wallet.chips,
+        balance: sender.wallet.balance
+      },
       status: 'completed',
       processedAt: new Date(),
-      metadata: { message, recipientUsername }
+      metadata: { 
+        message: message || 'User transfer', 
+        recipientUsername: recipient.username,
+        recipientEmail: recipient.email,
+        transferType: 'user_to_user'
+      }
     });
 
     const recipientTransaction = new Transaction({
@@ -466,10 +494,20 @@ router.post('/transfer', auth, async (req, res) => {
       amount,
       currency: 'chips',
       description: `Received ${amount} chips from ${sender.username}`,
-      reference: { transferId },
+      reference: { transferId, senderId: sender._id },
+      balanceBefore: recipientBalanceBefore,
+      balanceAfter: {
+        chips: recipient.wallet.chips,
+        balance: recipient.wallet.balance
+      },
       status: 'completed',
       processedAt: new Date(),
-      metadata: { message, senderUsername: sender.username }
+      metadata: { 
+        message: message || 'User transfer', 
+        senderUsername: sender.username,
+        senderEmail: sender.email,
+        transferType: 'user_to_user'
+      }
     });
 
     await Promise.all([
@@ -483,8 +521,15 @@ router.post('/transfer', auth, async (req, res) => {
       data: {
         transferId,
         amount,
-        recipient: recipientUsername,
-        senderBalance: sender.wallet.chips
+        sender: {
+          username: sender.username,
+          newBalance: sender.wallet.chips
+        },
+        recipient: {
+          username: recipient.username,
+          newBalance: recipient.wallet.chips
+        },
+        message: message || 'User transfer'
       }
     });
 
@@ -493,6 +538,137 @@ router.post('/transfer', auth, async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to transfer chips',
+      error: error.message
+    });
+  }
+});
+
+// Get transfer history for current user
+router.get('/transfers', auth, async (req, res) => {
+  try {
+    const { page = 1, limit = 20, type } = req.query;
+    const skip = (page - 1) * limit;
+
+    let filter = { 
+      user: req.userId,
+      type: { $in: ['chip_transfer_in', 'chip_transfer_out', 'admin_token_receive', 'admin_token_send'] }
+    };
+    
+    if (type && ['sent', 'received'].includes(type)) {
+      if (type === 'sent') {
+        filter.type = { $in: ['chip_transfer_out', 'admin_token_send'] };
+      } else {
+        filter.type = { $in: ['chip_transfer_in', 'admin_token_receive'] };
+      }
+    }
+
+    const [transfers, total] = await Promise.all([
+      Transaction.find(filter)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(parseInt(limit))
+        .populate('processedBy', 'username'),
+      Transaction.countDocuments(filter)
+    ]);
+
+    res.json({
+      success: true,
+      data: {
+        transfers,
+        pagination: {
+          page: parseInt(page),
+          limit: parseInt(limit),
+          total,
+          pages: Math.ceil(total / limit)
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error('Get transfers error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to get transfer history',
+      error: error.message
+    });
+  }
+});
+
+// Request chips from another user
+router.post('/request-chips', auth, async (req, res) => {
+  try {
+    const { recipientUsername, amount, message } = req.body;
+    
+    if (!recipientUsername || !amount || amount <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Recipient username and valid amount are required'
+      });
+    }
+
+    const [requester, recipient] = await Promise.all([
+      User.findById(req.userId),
+      User.findOne({ username: recipientUsername, status: 'active' })
+    ]);
+
+    if (!requester) {
+      return res.status(404).json({
+        success: false,
+        message: 'Requester not found'
+      });
+    }
+
+    if (!recipient) {
+      return res.status(404).json({
+        success: false,
+        message: 'Recipient not found or inactive'
+      });
+    }
+
+    if (requester._id.toString() === recipient._id.toString()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Cannot request chips from yourself'
+      });
+    }
+
+    // Create a chip request record (could be expanded to a separate ChipRequest model)
+    const requestId = `chip_request_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    
+    // For now, we'll just create a notification-like transaction
+    const requestTransaction = new Transaction({
+      user: requester._id,
+      type: 'chip_request',
+      amount,
+      currency: 'chips',
+      description: `Requested ${amount} chips from ${recipientUsername}`,
+      reference: { requestId, recipientId: recipient._id },
+      status: 'pending',
+      metadata: { 
+        message: message || 'Chip request', 
+        recipientUsername: recipient.username,
+        requestType: 'chip_request'
+      }
+    });
+
+    await requestTransaction.save();
+
+    res.json({
+      success: true,
+      message: `Chip request sent to ${recipientUsername}`,
+      data: {
+        requestId,
+        amount,
+        recipient: recipientUsername,
+        message: message || 'Chip request'
+      }
+    });
+
+  } catch (error) {
+    console.error('Request chips error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to request chips',
       error: error.message
     });
   }

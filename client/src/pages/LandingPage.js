@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import styled from 'styled-components';
 import { motion } from 'framer-motion';
+import { getRandomAIGirlImage, generateAvatarOptions, getCasinoDealerAvatar } from '../utils/avatarGenerator';
 
 const LandingContainer = styled.div`
   min-height: 100vh;
@@ -173,37 +174,123 @@ const StatLabel = styled.div`
   margin-top: ${props => props.theme.spacing.sm};
 `;
 
+const AIGirlShowcase = styled(motion.div)`
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: ${props => props.theme.spacing.lg};
+  margin: ${props => props.theme.spacing['2xl']} 0;
+  max-width: 600px;
+  margin-left: auto;
+  margin-right: auto;
+`;
+
+const AIGirlAvatar = styled(motion.img)`
+  width: 120px;
+  height: 120px;
+  border-radius: ${props => props.theme.borderRadius.full};
+  object-fit: cover;
+  border: 3px solid ${props => props.theme.colors.primary};
+  box-shadow: ${props => props.theme.shadows.glow};
+  transition: ${props => props.theme.transitions.normal};
+
+  &:hover {
+    transform: scale(1.1);
+    box-shadow: ${props => props.theme.shadows.glowRed};
+  }
+`;
+
+const DealerSection = styled(motion.div)`
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: ${props => props.theme.spacing.xl};
+  margin: ${props => props.theme.spacing['3xl']} 0;
+  padding: ${props => props.theme.spacing.xl};
+  background: rgba(255, 215, 0, 0.1);
+  border-radius: ${props => props.theme.borderRadius.xl};
+  border: 1px solid rgba(255, 215, 0, 0.3);
+
+  @media (max-width: ${props => props.theme.breakpoints.md}) {
+    flex-direction: column;
+    text-align: center;
+  }
+`;
+
+const DealerAvatar = styled.img`
+  width: 150px;
+  height: 150px;
+  border-radius: ${props => props.theme.borderRadius.full};
+  object-fit: cover;
+  border: 4px solid ${props => props.theme.colors.primary};
+  box-shadow: ${props => props.theme.shadows.glow};
+`;
+
+const DealerInfo = styled.div`
+  flex: 1;
+`;
+
+const DealerTitle = styled.h3`
+  font-family: ${props => props.theme.fonts.heading};
+  font-size: ${props => props.theme.fontSizes['2xl']};
+  color: ${props => props.theme.colors.primary};
+  margin-bottom: ${props => props.theme.spacing.md};
+`;
+
+const DealerDescription = styled.p`
+  color: ${props => props.theme.colors.textSecondary};
+  font-size: ${props => props.theme.fontSizes.lg};
+  line-height: 1.6;
+`;
+
 const LandingPage = () => {
+  const [aiGirls, setAiGirls] = useState([]);
+  const [dealerAvatar, setDealerAvatar] = useState('');
+
+  useEffect(() => {
+    // Generate AI girl avatars for showcase
+    const avatars = generateAvatarOptions(6);
+    setAiGirls(avatars);
+    
+    // Get dealer avatar
+    setDealerAvatar(getCasinoDealerAvatar());
+  }, []);
+
   const features = [
     {
       icon: '🎰',
       title: 'Real-time Multiplayer',
-      description: 'Play with up to 6 players simultaneously in real-time Teen Patti games'
+      description: 'Play with up to 6 players simultaneously in real-time Teen Patti games',
+      image: getRandomAIGirlImage('avatar')
     },
     {
       icon: '💰',
       title: 'Secure Wallet System',
-      description: 'Manage your chips and balance with our secure wallet and payment system'
+      description: 'Manage your chips and balance with our secure wallet and payment system',
+      image: getRandomAIGirlImage('avatar')
     },
     {
       icon: '🏆',
       title: 'Competitive Rooms',
-      description: 'Choose from Beginner to VIP rooms based on your skill level'
+      description: 'Choose from Beginner to VIP rooms based on your skill level',
+      image: getRandomAIGirlImage('avatar')
     },
     {
       icon: '👑',
       title: 'AI-Powered Experience',
-      description: 'Beautiful AI girl avatars and stunning casino-themed interface'
+      description: 'Beautiful AI girl avatars and stunning casino-themed interface',
+      image: getRandomAIGirlImage('avatar')
     },
     {
       icon: '🔍',
       title: 'Find Players',
-      description: 'Search and connect with players from different cities'
+      description: 'Search and connect with players from different cities',
+      image: getRandomAIGirlImage('avatar')
     },
     {
       icon: '📊',
       title: 'Track Progress',
-      description: 'Monitor your stats, winnings, and climb the leaderboards'
+      description: 'Monitor your stats, winnings, and climb the leaderboards',
+      image: getRandomAIGirlImage('avatar')
     }
   ];
 
@@ -236,6 +323,51 @@ const LandingPage = () => {
             Experience the ultimate multiplayer Teen Patti with stunning visuals, 
             real-time gameplay, and secure wallet system
           </Subtitle>
+
+          {/* AI Girls Showcase */}
+          <AIGirlShowcase
+            initial={{ opacity: 0, scale: 0.8 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.8, delay: 0.3 }}
+          >
+            {aiGirls.map((girl, index) => (
+              <AIGirlAvatar
+                key={girl.id}
+                src={girl.url}
+                alt={`AI Girl ${index + 1}`}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.5, delay: 0.5 + index * 0.1 }}
+                whileHover={{ scale: 1.1, rotate: 5 }}
+                onError={(e) => {
+                  e.target.src = getRandomAIGirlImage('avatar');
+                }}
+              />
+            ))}
+          </AIGirlShowcase>
+
+          {/* Casino Dealer Section */}
+          <DealerSection
+            initial={{ opacity: 0, x: -50 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ duration: 0.8, delay: 0.8 }}
+          >
+            <DealerAvatar 
+              src={dealerAvatar} 
+              alt="Casino Dealer"
+              onError={(e) => {
+                e.target.src = getCasinoDealerAvatar();
+              }}
+            />
+            <DealerInfo>
+              <DealerTitle>Meet Your AI Dealers</DealerTitle>
+              <DealerDescription>
+                Experience the thrill of playing with beautiful AI-powered dealers 
+                who guide you through every hand. Our advanced AI creates stunning, 
+                unique avatars for an immersive casino experience.
+              </DealerDescription>
+            </DealerInfo>
+          </DealerSection>
 
           <FeatureGrid
             initial={{ opacity: 0 }}

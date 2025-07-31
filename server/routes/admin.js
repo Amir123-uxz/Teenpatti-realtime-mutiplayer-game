@@ -470,4 +470,400 @@ router.get('/analytics/revenue', adminAuth, async (req, res) => {
   }
 });
 
+// Generate tokens (Admin can create millions)
+router.post('/generate-tokens', adminAuth, async (req, res) => {
+  try {
+    const { amount, description = 'Admin token generation' } = req.body;
+
+    if (!amount || amount <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid amount'
+      });
+    }
+
+    // Find admin user
+    const admin = await User.findById(req.userId);
+    if (!admin) {
+      return res.status(404).json({
+        success: false,
+        message: 'Admin not found'
+      });
+    }
+
+    const balanceBefore = {
+      chips: admin.wallet.chips,
+      balance: admin.wallet.balance
+    };
+
+    // Add tokens to admin wallet
+    admin.wallet.chips += amount;
+    await admin.save();
+
+    // Create transaction record
+    const transaction = new Transaction({
+      user: req.userId,
+      type: 'admin_token_generation',
+      amount,
+      currency: 'chips',
+      description,
+      balanceBefore,
+      balanceAfter: {
+        chips: admin.wallet.chips,
+        balance: admin.wallet.balance
+      },
+      status: 'completed',
+      processedBy: req.userId,
+      processedAt: new Date(),
+      metadata: {
+        generationType: 'bulk_generation',
+        adminAction: true
+      }
+    });
+
+    await transaction.save();
+
+    // Log the action
+    console.log(`Admin ${admin.username} generated ${amount} tokens. Reason: ${description}`);
+
+    res.json({
+      success: true,
+      message: `Successfully generated ${amount} tokens`,
+      data: {
+        admin: {
+          username: admin.username,
+          wallet: admin.wallet
+        },
+        transaction,
+        generatedAmount: amount
+      }
+    });
+
+  } catch (error) {
+    console.error('Generate tokens error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to generate tokens',
+      error: error.message
+    });
+  }
+});
+
+// Admin send tokens to user
+router.post('/send-tokens', adminAuth, async (req, res) => {
+  try {
+    const { recipientId, amount, message = 'Tokens from admin' } = req.body;
+
+    if (!recipientId || !amount || amount <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Recipient ID and valid amount are required'
+      });
+    }
+
+    const [admin, recipient] = await Promise.all([
+      User.findById(req.userId),
+      User.findById(recipientId)
+    ]);
+
+    if (!admin) {
+      return res.status(404).json({
+        success: false,
+        message: 'Admin not found'
+      });
+    }
+
+    if (!recipient) {
+      return res.status(404).json({
+        success: false,
+        message: 'Recipient not found'
+      });
+    }
+
+    if (recipient.status !== 'active') {
+      return res.status(400).json({
+        success: false,
+        message: 'Recipient account is not active'
+      });
+    }
+
+    // Check if admin has enough tokens
+    if (admin.wallet.chips < amount) {
+      return res.status(400).json({
+        success: false,
+        message: 'Insufficient tokens in admin wallet'
+      });
+    }
+
+    // Record balances before transfer
+    const adminBalanceBefore = {
+      chips: admin.wallet.chips,
+      balance: admin.wallet.balance
+    };
+    const recipientBalanceBefore = {
+      chips: recipient.wallet.chips,
+      balance: recipient.wallet.balance
+    };
+
+    // Perform transfer
+    admin.wallet.chips -= amount;
+    recipient.wallet.chips += amount;
+
+    await Promise.all([admin.save(), recipient.save()]);
+
+    // Create transaction records
+    const transferId = `admin_transfer_${Date.now()}`;
+
+    const adminTransaction = new Transaction({
+      user: admin._id,
+      type: 'admin_token_send',
+      amount,
+      currency: 'chips',
+      description: `Sent ${amount} tokens to ${recipient.username}`,
+      reference: { transferId, recipientId },
+      balanceBefore: adminBalanceBefore,
+      balanceAfter: {
+        chips: admin.wallet.chips,
+        balance: admin.wallet.balance
+      },
+      status: 'completed',
+      processedBy: req.userId,
+      processedAt: new Date(),
+      metadata: { message, recipientUsername: recipient.username }
+    });
+
+    const recipientTransaction = new Transaction({
+      user: recipient._id,
+      type: 'admin_token_receive',
+      amount,
+      currency: 'chips',
+      description: `Received ${amount} tokens from admin`,
+      reference: { transferId, senderId: admin._id },
+      balanceBefore: recipientBalanceBefore,
+      balanceAfter: {
+        chips: recipient.wallet.chips,
+        balance: recipient.wallet.balance
+      },
+      status: 'completed',
+      processedBy: req.userId,
+      processedAt: new Date(),
+      metadata: { message, senderUsername: admin.username }
+    });
+
+    await Promise.all([
+      adminTransaction.save(),
+      recipientTransaction.save()
+    ]);
+
+    // Log the action
+    console.log(`Admin ${admin.username} sent ${amount} tokens to ${recipient.username}. Message: ${message}`);
+
+    res.json({
+      success: true,
+      message: `Successfully sent ${amount} tokens to ${recipient.username}`,
+      data: {
+        transferId,
+        amount,
+        recipient: {
+          username: recipient.username,
+          newBalance: recipient.wallet.chips
+        },
+        admin: {
+          username: admin.username,
+          newBalance: admin.wallet.chips
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error('Admin send tokens error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to send tokens',
+      error: error.message
+    });
+  }
+});
+
+// Admin receive tokens from user (for special cases)
+router.post('/receive-tokens', adminAuth, async (req, res) => {
+  try {
+    const { senderId, amount, reason = 'Admin token collection' } = req.body;
+
+    if (!senderId || !amount || amount <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Sender ID and valid amount are required'
+      });
+    }
+
+    const [admin, sender] = await Promise.all([
+      User.findById(req.userId),
+      User.findById(senderId)
+    ]);
+
+    if (!admin) {
+      return res.status(404).json({
+        success: false,
+        message: 'Admin not found'
+      });
+    }
+
+    if (!sender) {
+      return res.status(404).json({
+        success: false,
+        message: 'Sender not found'
+      });
+    }
+
+    // Check if sender has enough tokens
+    if (sender.wallet.chips < amount) {
+      return res.status(400).json({
+        success: false,
+        message: 'Sender has insufficient tokens'
+      });
+    }
+
+    // Record balances before transfer
+    const adminBalanceBefore = {
+      chips: admin.wallet.chips,
+      balance: admin.wallet.balance
+    };
+    const senderBalanceBefore = {
+      chips: sender.wallet.chips,
+      balance: sender.wallet.balance
+    };
+
+    // Perform transfer
+    sender.wallet.chips -= amount;
+    admin.wallet.chips += amount;
+
+    await Promise.all([admin.save(), sender.save()]);
+
+    // Create transaction records
+    const transferId = `admin_collect_${Date.now()}`;
+
+    const adminTransaction = new Transaction({
+      user: admin._id,
+      type: 'admin_token_receive',
+      amount,
+      currency: 'chips',
+      description: `Received ${amount} tokens from ${sender.username}`,
+      reference: { transferId, senderId },
+      balanceBefore: adminBalanceBefore,
+      balanceAfter: {
+        chips: admin.wallet.chips,
+        balance: admin.wallet.balance
+      },
+      status: 'completed',
+      processedBy: req.userId,
+      processedAt: new Date(),
+      metadata: { reason, senderUsername: sender.username }
+    });
+
+    const senderTransaction = new Transaction({
+      user: sender._id,
+      type: 'admin_token_deduction',
+      amount,
+      currency: 'chips',
+      description: `${amount} tokens collected by admin`,
+      reference: { transferId, adminId: admin._id },
+      balanceBefore: senderBalanceBefore,
+      balanceAfter: {
+        chips: sender.wallet.chips,
+        balance: sender.wallet.balance
+      },
+      status: 'completed',
+      processedBy: req.userId,
+      processedAt: new Date(),
+      metadata: { reason, adminUsername: admin.username }
+    });
+
+    await Promise.all([
+      adminTransaction.save(),
+      senderTransaction.save()
+    ]);
+
+    // Log the action
+    console.log(`Admin ${admin.username} collected ${amount} tokens from ${sender.username}. Reason: ${reason}`);
+
+    res.json({
+      success: true,
+      message: `Successfully collected ${amount} tokens from ${sender.username}`,
+      data: {
+        transferId,
+        amount,
+        sender: {
+          username: sender.username,
+          newBalance: sender.wallet.chips
+        },
+        admin: {
+          username: admin.username,
+          newBalance: admin.wallet.chips
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error('Admin receive tokens error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to receive tokens',
+      error: error.message
+    });
+  }
+});
+
+// Get admin token management stats
+router.get('/token-stats', adminAuth, async (req, res) => {
+  try {
+    const [
+      totalGenerated,
+      totalSent,
+      totalReceived,
+      recentTransfers
+    ] = await Promise.all([
+      Transaction.aggregate([
+        { $match: { type: 'admin_token_generation' } },
+        { $group: { _id: null, total: { $sum: '$amount' } } }
+      ]),
+      Transaction.aggregate([
+        { $match: { type: 'admin_token_send' } },
+        { $group: { _id: null, total: { $sum: '$amount' } } }
+      ]),
+      Transaction.aggregate([
+        { $match: { type: 'admin_token_receive' } },
+        { $group: { _id: null, total: { $sum: '$amount' } } }
+      ]),
+      Transaction.find({
+        type: { $in: ['admin_token_generation', 'admin_token_send', 'admin_token_receive'] }
+      })
+        .populate('user', 'username')
+        .sort({ createdAt: -1 })
+        .limit(10)
+    ]);
+
+    const stats = {
+      totalGenerated: totalGenerated[0]?.total || 0,
+      totalSent: totalSent[0]?.total || 0,
+      totalReceived: totalReceived[0]?.total || 0,
+      netTokens: (totalGenerated[0]?.total || 0) + (totalReceived[0]?.total || 0) - (totalSent[0]?.total || 0),
+      recentTransfers
+    };
+
+    res.json({
+      success: true,
+      data: stats
+    });
+
+  } catch (error) {
+    console.error('Get token stats error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to get token stats',
+      error: error.message
+    });
+  }
+});
+
 module.exports = router;
